@@ -1,0 +1,353 @@
+// CSCI 515 - GPL Game
+// Kamrin Bains
+
+
+// There a few bugs in this game to be aware about
+// If you win, the next game will be bugged and the snake body grows without gathering apples
+// If you lose, you can left click and the game continues one more time but with permanent spaces
+// in the way you must watch out for
+// Hope you enjoy!
+
+
+// window variables
+int window_width = 1000;
+int window_height = 500;
+double window_red = 0.5;
+double window_blue = 0.5;
+double window_green = 0.5;
+int animation_speed = 70;
+string window_title = "SNAKE";
+
+
+// variables
+
+	// mouse variables
+int mouse_x;
+int mouse_y;
+
+	// 'apple variables'
+int app = random(255);
+int attempts = 1000;
+int found = 0;
+
+	// grid initialization variables
+int i;
+int map_x_dist = 255;
+int map_y_dist = 10;
+int sdist = 30;
+
+	// snake movement variables
+int cur_x = 0;
+int cur_y = 30;
+int beg = 1;
+
+	// snake body/tail movement
+int prev_x = 0;
+int prev_y = 30;
+
+	// game status
+int status = 0;
+
+	// other variables
+int prev_counter = 0;
+int counter = 4;
+
+
+// animation declarations
+
+forward animation map_anim(rectangle cur);
+forward animation snake_move(rectangle cur);
+forward animation text_anim(textbox cur);
+forward animation t_move(rectangle cur);
+forward animation cur_anim(circle cur);
+forward animation game_text(textbox cur);
+
+
+// game objects
+	// circle to follow the cursor, was implemented for a menu system where you could click and select
+circle cursor(x = mouse_x, y = mouse_y, radius = 5, visible = 0, animation_block = cur_anim);
+
+
+	// text box and bg on the left
+textbox counter_text(x = 50, y = 450, text = "TOTAL: " + counter, size = 0.2, red = 1, drawing_order = 7, animation_block = text_anim);
+rectangle counter_bg(x = 45, y = 440, h = 40, w = 170 , red = 0, green = 0, blue = 0, drawing_order = 6);
+
+textbox tip_text(x = 50, y = 430, text = "Use space to restart", size = 0.1, red = 1, drawing_order = 7);
+textbox tip2_text(x = 50, y = 410, text = "Left-click to start", size = 0.1, red = 1, drawing_order = 7);
+rectangle tip_bg(x = 45, y = 400, h = 40, w = 170 , red = 0, green = 0, blue = 0, drawing_order = 6);
+
+
+	// game status text, appears if you win/lose
+textbox game_status(x = 432, y = 250, text = "MEDIUM", size = 0.2, red = 1, green = 1, drawing_order = 6, visible = 0, animation_block = game_text);
+rectangle game_status_bg(x = 426, y = 240, h = 38, w = 168, drawing_order = 5, red = 0.6, green = 0.6, blue = 0.6, visible = 0);
+rectangle status_bg(x = 428, y = 242, h = 34, w = 164, drawing_order = 5, red = 0, green = 0, blue = 0, visible = 0);
+	
+
+	// snake head rectangle
+rectangle snake(h = 25, w = 25, x = 285, y = 70, drawing_order = 2, animation_block = snake_move, red = 0, green = 0, blue = 0.9);
+
+	// snake tail rectangle
+rectangle tail(h = 25, w = 25, x = 285, y = 10, visible = 0, drawing_order = 2, animation_block = t_move);
+
+
+	// grid background color
+rectangle bg_grid(h = 485, w = 485, x = 250, y = 5, red = 0, blue = 0, green = 0, drawing_order = 1);
+
+	// grid array
+rectangle map[256];
+
+
+// initialization block
+initialization {
+	for (i = 0; i < 256; i++) {
+		// need to move each row when it has been 16 spaces
+		if (i % 16 == 0 && i != 0) {	
+			map_x_dist = 255;
+			map_y_dist = map_y_dist + sdist;
+		}
+		// this is to set the prev movement for the tail to follow in the beginning 
+		if (i == 1 || i == 17) {
+			map[i].user_int3 = 30;
+		}
+		// space initialization
+		map[i].h = 25;
+		map[i].w = 25;
+		map[i].green = (random(204 - 51) + 51) / 255.0;
+		map[i].user_double = map[i].green; // save color for when reset
+		map[i].red = 0;
+		map[i].blue = 0;
+		map[i].drawing_order = 1;
+		map[i].x = map_x_dist;
+		map[i].y = map_y_dist;
+		map_x_dist = map_x_dist + sdist;
+		map[i].animation_block = map_anim;
+		
+		// random space starting out for apple
+		if (i == app) {
+			map[i].green = 0;
+			map[i].red = 1.0;
+			map[i].user_int = 2;
+		}
+	}
+}
+
+
+// animations
+	// grid animation that updates as the snake and tail travel along
+	// instead of dealing with a 'snake body', just change the color of the grid to act as the body
+	// use user_int's to store information, such as user_int is 1 if it counts as 'snake body'
+	// user_int = 2 marks the space as an apple, user_int2 and user_int3 store the X and Y direction
+	// the snake head traveled so that the snake tail knows the path
+animation map_anim(rectangle cur) {
+	if (status > 0) {
+		if (cur touches snake && cur.user_int == 1) {
+			status = -1;
+		}
+		else if (cur touches snake && cur.user_int == 2) {
+			counter++;
+			cur.user_int2 = cur_x; // saves x speed
+			cur.user_int3 = cur_y; // saves y speed
+			status = 2;
+			for (attempts = 0; attempts < 1000 && found == 0; attempts += 1) {
+				app = random(256); // generate a random index between 0 and 255
+
+				if (map[app].user_int != 1) { // check if the space is unoccupied
+					map[app].user_int = 2; // mark the space as occupied by the apple
+					map[app].green = 0;
+					map[app].red = 1.0;
+					found = 1; // exit the loop once an unoccupied space is found
+				}
+			}
+
+			if (found == 0) {
+				if (counter == 256) {
+					status = -1;
+				}
+			}
+			cur.green = 0;
+			cur.blue = 1.0;
+			cur.red = 0;
+			found = 0;
+		}
+		else if (cur touches snake) {
+			cur.green = 0;
+			cur.blue = 1.0;
+			cur.red = 0;
+			cur.user_int = 1; // indicates snake body is occupying space
+			cur.user_int2 = cur_x; // saves x speed
+			cur.user_int3 = cur_y; // saves y speed
+		}
+		if (cur touches tail) {
+			prev_x = cur.user_int2;
+			prev_y = cur.user_int3;
+			cur.user_int = 0;
+			cur.user_int2 = 0;
+			cur.user_int3 = 0;
+		}
+		else if (cur.user_int == 0) {
+			cur.green = cur.user_double;
+			cur.blue = 0;
+			cur.red = 0;
+		}
+	}
+}
+
+	// snake head animation that moves the head and tracks if it has gone out of bounds of the grid and moves it 
+	// to corresponding side
+animation snake_move(rectangle cur) {
+	if (status > 0) {
+		cur.x += cur_x;
+		cur.y += cur_y;
+		if (cur.x + cur_x > 735) {
+			cur.x = 255;
+		}
+		if (cur.y + cur_y > 490) {
+			cur.y = 10;
+		}
+		if (cur.x + cur_x < 225) {
+			cur.x = 705;
+		}
+		if (cur.y + cur_y < -20) {
+			cur.y = 460;
+		}
+	}
+}
+
+	// tail animation that travels along with the prev_x and prev_y (which are updated in the grid animation)
+	// if the head eats an 'apple' then the tail must 'lag' behind so that the body grows 1 space
+animation t_move(rectangle cur) {
+	if (status > 0) {
+		if (status == 2) {
+			cur.user_int = prev_x;
+			cur.user_int2 = prev_y;
+			prev_x = 0;
+			prev_y = 0;
+			beg = 2;
+			status = 1;
+		}
+		else if (beg == 2) {
+			prev_x = cur.user_int;
+			prev_y = cur.user_int2;
+			cur.user_int = 0;
+			cur.user_int2 = 0;
+			beg = 1;
+		}
+		cur.x += prev_x;
+		cur.y += prev_y;
+		if (cur.x + prev_x > 735) {
+			cur.x = 255;
+		}
+		if (cur.y + prev_y > 490) {
+			cur.y = 10;
+		}
+		if (cur.x + prev_x < 225) {
+			cur.x = 705;
+		}
+		if (cur.y + prev_y < -20) {
+			cur.y = 460;
+		}
+	}
+}
+
+	// text counter animation
+animation text_anim(textbox cur) {
+	if (counter != prev_counter) {
+		cur.text = "TOTAL: " + counter;
+		prev_counter = counter;
+	}
+}
+
+	// cursor tracker animation, updates status if counter has reached maximum
+animation cur_anim(circle cur) {
+	cur.x = mouse_x;
+	cur.y = mouse_y;
+	if (counter == 256) {
+		status = -1;
+	}
+}
+
+	// if game has ended, read counter and if it is a win, update textbox, make game status appear
+animation game_text(textbox cur) {
+	if (status < 0) {
+		if (counter >= 255) {
+			cur.text = "YOU WIN!";
+			cur.visible = 1;
+			cur.green = 1.0;
+			cur.red = 0;
+			cur.blue = 0;
+			game_status_bg.visible = 1;
+			status_bg.visible = 1;
+			game_status_bg.w = 148;
+			status_bg.w = 144;
+		}
+		else {
+			cur.text = "YOU LOSE!";
+			cur.visible = 1;
+			cur.green = 0;
+			cur.red = 1.0;
+			cur.blue = 0;
+			game_status_bg.visible = 1;
+			status_bg.visible = 1;
+			game_status_bg.w = 168;
+			status_bg.w = 164;
+		}
+	}
+	else {
+		cur.visible = 0;
+		game_status_bg.visible = 0;
+		status_bg.visible = 0;
+	}
+}
+
+// events
+	// w, a, s, d movements
+on akey {
+	cur_x = -(sdist);
+	cur_y = 0;
+}
+
+on skey {
+	cur_x = 0;
+	cur_y = -(sdist);
+}
+
+on dkey {
+	cur_x = sdist;
+	cur_y = 0;
+}
+
+on wkey {
+	cur_x = 0;
+	cur_y = sdist;
+}
+
+	// originally was tracking mouse movement and selection of menu choices, changed to start the game instead
+on leftmouse_down {
+	status = 1;
+}
+
+	// space to restart the game, move pieces back together and reset grid values
+on space {
+	app = random(255);
+	for (i = 0; i < 256; i++) {
+		map[i].user_int = 0;
+		if (i == 1 || i == 17) {
+			map[i].user_int3 = 30;
+		}
+		if (i == app) {
+			map[i].green = 0;
+			map[i].red = 1.0;
+			map[i].user_int = 2;
+		}
+	}
+	snake.x = 285;
+	snake.y = 70;
+	tail.x = 285;
+	tail.y = 10;
+	cur_x = 0;
+	cur_y = 30;
+	counter = 4;
+	status = 0;
+}
+
+
